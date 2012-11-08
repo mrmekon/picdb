@@ -3,6 +3,12 @@ picdb
 
 Command-line debugger for Microchip PIC processors
 
+Debugger written in jython.  Interacts with the Java API provided by Microchip in the MPLAB X installation.
+
+For now this is an early demonstration, working only with the PICkit3 and PIC32MX150F128B processor.
+
+Verify path to JARs is correct in picdb.sh, and run picdb.sh.
+
 
 Reverse engineering notes
 =====
