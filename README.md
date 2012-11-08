@@ -1,4 +1,4 @@
-picdb
+## picdb
 =====
 
 Command-line debugger for Microchip PIC processors
@@ -10,8 +10,9 @@ For now this is an early demonstration, working only with the PICkit3 and PIC32M
 Verify path to JARs is correct in picdb.sh, and run picdb.sh.
 
 
-Example session
+## Example session
 =====
+```
 $ picdb.sh 
 PICdb> connect PIC32MX150F128B    
 content/mplab/mplab.deviceSupport
@@ -62,9 +63,9 @@ Usage: connect <PIC device>
 ex: connect PIC32MX150F128B
 
 PICdb>   
+```
 
-
-Reverse engineering notes
+## Reverse engineering notes
 =====
 
 Get public methods from classes in a jar:
