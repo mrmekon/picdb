@@ -10,10 +10,12 @@ from com.microchip.mplab.mdbcore.debugger import Debugger
 from com.microchip.mplab.mdbcore.debugger import DebugException
 from com.microchip.mplab.mdbcore.debugger import ToolEvent
 from com.microchip.mplab.mdbcore.loader import Loader
+from com.microchip.mplab.mdbcore.loader import LoadException
 from com.microchip.mplab.mdbcore.translator.interfaces import ITranslator
 from com.microchip.mplab.mdbcore.translator.exceptions import TranslatorException
 from com.microchip.mplab.mdbcore.disasm import DisAsm
 from com.microchip.mplab.mdbcore.memory.memorytypes import ProgramMemory
+from com.microchip.mplab.mdbcore.objectfileparsing.exception import ProgramFileParsingException
 
 from com.microchip.mplab.mdbcore.ControlPointMediator.ControlPoint import BreakType
 from com.microchip.mplab.mdbcore.ControlPointMediator import ControlPointMediator
@@ -125,6 +127,9 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
             self.mem = self.assembly.getLookup().lookup(ProgramMemory).GetVirtualMemory()
         except DebugException:
             print "Failed to load ELF onto target."
+            return False
+        except LoadException:
+            print "File not found."
             return False
         return True
 
