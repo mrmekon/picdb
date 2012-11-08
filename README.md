@@ -1,13 +1,38 @@
 ## picdb
 =====
 
-Command-line debugger for Microchip PIC processors
+Python-based command-line debugger for Microchip PIC processors.
 
-Debugger written in jython.  Interacts with the Java API provided by Microchip in the MPLAB X installation.
+Debugger written in Python, and requires jython for execution.  Interacts with the Java mdbcore API provided by Microchip in the MPLAB X installation.  This is the same API used by Microchip's currently incomplete "mdb.sh", and MPLAB X itself.
 
-For now this is an early demonstration, working only with the PICkit3 and PIC32MX150F128B processor.
+For now this is an early demonstration, working only with the PICkit3 and tested only with the PIC32MX150F128B processor.
 
-Verify path to JARs is correct in picdb.sh, and run picdb.sh.
+I wrote this because mdb.sh is currently incomplete, and nearly unusable, so loading or debugging PIC code at the command-line was impossible.
+
+
+## Running
+=====
+
+1) Verify path to JARs is correct in picdb.sh
+2) run picdb.sh.
+
+
+## Supported features
+=====
+
+* Basic debugger commands
+    * connect (connect to debugger and target device)
+    * load (load ELF file onto target)
+    * break (add breakpoints)
+    * breakpoints (list breakpoints)
+    * continue (run target)
+    * step (step target -- currently StepOver only)
+    * print (print information about something -- currently only Program Counter)
+    * help (list possible commands, or display specific command's help)
+    * quit
+* Readline input handling supports up/down keys, and history.
+* Address-to-Source-Line conversions when stepping.
+* Partial assembly code output when stepping.
 
 
 ## Example session
