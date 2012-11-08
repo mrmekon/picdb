@@ -13,8 +13,8 @@ I wrote this because mdb.sh is currently incomplete, and nearly unusable, so loa
 ## Running
 =====
 
-1) Verify path to JARs is correct in picdb.sh
-2) run picdb.sh.
+1. Verify path to JARs is correct in picdb.sh
+2. run picdb.sh.
 
 
 ## Supported features
