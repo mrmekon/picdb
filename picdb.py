@@ -90,7 +90,7 @@ Continue running target from current PC.
 Usage: continue
 '''
         self.dbg.run()
-        self.dbg.waitForHalt()
+        self.dbg.waitForHalt() # block
 
         # It doesn't know where it is immediately after stopping.
         # But it also LIES.
@@ -152,7 +152,6 @@ class CommandInterpreter:
 
     def _cleanShutdown(self):
         '''Disconnect from debugger and quit.'''
-        print "Exiting!"
         self._handler.dbg.disconnect()
         sys.exit(0) # this will interrupt raw_input()
 

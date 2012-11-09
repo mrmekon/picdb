@@ -16,6 +16,7 @@ from com.microchip.mplab.mdbcore.translator.exceptions import TranslatorExceptio
 from com.microchip.mplab.mdbcore.disasm import DisAsm
 from com.microchip.mplab.mdbcore.memory.memorytypes import ProgramMemory
 from com.microchip.mplab.mdbcore.objectfileparsing.exception import ProgramFileParsingException
+from com.microchip.mplab.mdbcore.platformtool import PlatformToolMetaManager
 
 from com.microchip.mplab.mdbcore.ControlPointMediator.ControlPoint import BreakType
 from com.microchip.mplab.mdbcore.ControlPointMediator import ControlPointMediator
@@ -94,10 +95,15 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
 
     def selectDebugger(self):
         # Select PICkit3 debugger
+        alltools = PlatformToolMetaManager.getAllTools()
+        devname = self.devices[0].split(":=")[6] # name is 6th entry in device string
+        if devname.find("PICkit") == 0:
+            devname = devname.replace(" ", "") # damn tools report the wrong name
+        tool = [x for x in alltools if x.getName() == devname][0]
         self.factory.ChangeTool(self.assembly,
-                                "PICkit3PlatformTool",
-                                "com.microchip.mplab.mdbcore.PICKit3Tool.PICkit3DbgToolManager",
-                                "debuggerProgrammer",
+                                tool.getConfigurationObjectID(),
+                                tool.getClassName(),
+                                tool.getFlavor(),
                                 self.devices[0])
         self.factory.SetToolProperties(self.assembly,None)
 
@@ -149,6 +155,10 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
     def disconnect(self):
         if self.mdb:
             self.mdb.Disconnect()
+
+    def getDeviceFamily(self):
+        bits = assembly.GetDevice().getFamilyCode()
+        return assembly.GetDevice().getSubFamily()
 
     def addressToSourceLine(self, addr):
         try:

@@ -36,6 +36,26 @@ I wrote this because mdb.sh is currently incomplete, and nearly unusable, so loa
 * Partial assembly code output when stepping.
 
 
+## TODO
+=====
+
+Basic functionality:
+* Display source code
+* Set breakpoints by file/line
+* View memory
+* View disassembly
+* View global and local symbols
+* View registers
+* Delete/modify/disable breakpoints
+* Advanced breakpoints (conditional, watchpoints)
+
+More advanced:
+
+* Recover nicely from losing the debugger/target
+* Command line arguments
+* Scripting
+
+
 ## Example session
 =====
 ```
