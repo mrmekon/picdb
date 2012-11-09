@@ -16,16 +16,19 @@ class CommandHandler:
         self._commandMap = {
         "connect": {'fn': self.cmdConnect, 'help': "Conects to a PIC target."},
         "load": {'fn': self.cmdLoad, 'help': "Load ELF file onto target."},
-        "step": {'fn': self.cmdStep, 'help': "Step over next source line."},
+        "step": {'fn': self.cmdStep, 'help': "Step to next source line."},
+        "stepi": {'fn': self.cmdStepi, 'help': "Step to next assembly instruction."},
+        "next": {'fn': self.cmdNext, 'help': "Step to next source line, over functions."},
         "quit": {'fn': self.cmdQuit, 'help': "Quits this program."},
         "help": {'fn': self.cmdHelp, 'help': "Displays this help."},
         "debug": {'fn': self.cmdDebug, 'help': "Drop to Python console."},
         "break": {'fn': self.cmdBreak, 'help': "Set breakpoint."},
         "continue": {'fn': self.cmdContinue, 'help': "Continue running target."},
-        "print": {'fn': self.cmdPrint, 'help': "Print variable."},
+        "print": {'fn': self.cmdPrint, 'help': "Display variable."},
         "breakpoints": {'fn': self.cmdBreakpoints, 'help': "List breakpoints."},
+        "list": {'fn': self.cmdList, 'help': "Display source code listing."},
         }
-        
+
     def cmdConnect(self, args):
         '''
 Connects to a PIC target.
@@ -47,6 +50,12 @@ Usage: print <variable or register>
 Supported registers:
  * $pc
 '''
+        if args[0] != "$":
+            data = self.dbg.getSymbolValue(args)
+            if data is not None:
+                print data
+            else:
+                print "Symbol not found."
         if args.lower() == "$pc":
             print "PC: 0x%X" % self.dbg.getPC()
 
@@ -104,13 +113,42 @@ Usage: continue
         print "%sStopped at 0x%X (%s:%d)" % ("" if bp < 0 else "Breakpoint %d: " % bp,
                                              pc,file,line)
 
+    def cmdList(self, args):
+        pc = self.dbg.getPC()
+        fname,line = self.dbg.addressToSourceLine(pc, stripdir=False)
+        print "Listing from: %s" % fname
+        f = open(fname, "r")
+        for _ in range(line-1):
+            f.readline()
+        for i in range(10):
+            print "%.3d: %s" % (line+i, f.readline())
+
+
     def cmdStep(self, args):
         '''
-Step target over one line of source.
+Step target over one line of source.  Descends into functions.
 Usage: step
 '''
-        self.dbg.step()
-        
+        self.dbg.step(self.dbg.StepType.IN)
+
+
+    def cmdStepi(self, args):
+        '''
+Step target over one single instruction.
+Usage: stepi
+'''
+        self.dbg.step(self.dbg.StepType.INSTR)
+
+
+    def cmdNext(self, args):
+        '''
+Step target over one line of source.  If line is a function call, does not
+descend into it.
+Usage: step
+'''
+        self.dbg.step(self.dbg.StepType.OVER)
+
+
     def cmdQuit(self, args):
         '''
 Quit debugger.

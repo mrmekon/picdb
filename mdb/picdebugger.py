@@ -1,5 +1,7 @@
 import sys
 import time
+import struct
+import jarray
 import java.lang.String
 import java.lang.System as System
 import com.microchip.mplab.util.observers
@@ -15,8 +17,11 @@ from com.microchip.mplab.mdbcore.translator.interfaces import ITranslator
 from com.microchip.mplab.mdbcore.translator.exceptions import TranslatorException
 from com.microchip.mplab.mdbcore.disasm import DisAsm
 from com.microchip.mplab.mdbcore.memory.memorytypes import ProgramMemory
+from com.microchip.mplab.mdbcore.memory.memorytypes import FileRegisters
 from com.microchip.mplab.mdbcore.objectfileparsing.exception import ProgramFileParsingException
 from com.microchip.mplab.mdbcore.platformtool import PlatformToolMetaManager
+from com.microchip.mplab.mdbcore.symbolview.interfaces import SymbolViewProvider
+from com.microchip.mplab.mdbcore.common.debug.SymbolType import eFundamentalType as VarType
 
 from com.microchip.mplab.mdbcore.ControlPointMediator.ControlPoint import BreakType
 from com.microchip.mplab.mdbcore.ControlPointMediator import ControlPointMediator
@@ -24,6 +29,11 @@ from com.microchip.mplab.mdbcore.ControlPointMediator import ControlPointMediato
 System.setProperty("crownking.stream.verbosity", "quiet")
 
 class picdebugger(com.microchip.mplab.util.observers.Observer):
+    class StepType:
+        IN = 0
+        OVER = 1
+        INSTR = 2
+    
     def __init__(self):
         self.mdb = None
         self._breakpoints = []
@@ -160,16 +170,69 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         bits = assembly.GetDevice().getFamilyCode()
         return assembly.GetDevice().getSubFamily()
 
-    def addressToSourceLine(self, addr):
+    def getMemoryContents(self, addr, length, virtual=False):
+        fr = self.assembly.getLookup().lookup(FileRegisters)
+        data = jarray.zeros(length, "b")
+        if virtual:
+            mem = fr.GetVirtualMemory()
+        else:
+            mem = fr.GetPhysicalMemory()
+        mem.RefreshFromTarget(addr, length)
+        if mem.Read(addr, length, data) == length:
+            return data        
+        return None
+
+    def getSymbolValue(self, symbol):
+        sv = self.assembly.getLookup().lookup(SymbolViewProvider)
+        info = sv.getRawSymbol(symbol)
+        if not info:
+            return None
+        vartype = info.Type()
+        varlength = info.ByteLength()
+        data = self.getMemoryContents(info.Address(), varlength, virtual=True)
+        if not data:
+            return None
+
+        # Unpack array into variable based on type
+        fmtMap = {1: "b", 2: "h", 4: "i", 8: "q"}
+        # TODO: fill out map of types and their signedness
+        signMap = {VarType.ST_ULONG.value(): False,
+                   VarType.ST_LONG.value(): True,
+                   }
+        if varlength > 8:
+            # TODO: Handle complex symbols.  Struct or string or something.
+            print "Symbol type not handled!"
+            return None
+        fmt = fmtMap[varlength]
+        if vartype in signMap:
+            fmt = fmt.lower() if signMap[vartype] else fmt.upper()
+        # Special cases:
+        if vartype == VarType.ST_FLOAT:
+            fmt = "f"
+        elif vartype == VarType.ST_DOUBLE:
+            fmt = "d"
+        return struct.unpack(fmt, data.tostring())[0]
+        
+        
+
+    def addressToSourceLine(self, addr, stripdir=True):
         try:
             info = self.translator.addressToSourceLine(addr)
-            return (info.file.split("/")[-1], info.lLine)
+            f = info.file
+            if stripdir:
+                f = info.file.split("/")[-1]                
+            return (f, info.lLine)
         except TranslatorException:
             return ("unknown",0)
 
-    def step(self):
+    def step(self, type=StepType.OVER):
         try:
-            self.mdb.StepOver()
+            if type == self.StepType.OVER:
+                self.mdb.StepOver()
+            elif type == self.StepType.IN:
+                self.mdb.StepIn()
+            else:
+                self.mdb.StepInstr()
         except DebugException:
             print "Lost communication with debugger or target!"
             return
