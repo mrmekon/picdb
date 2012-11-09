@@ -29,6 +29,7 @@ I wrote this because mdb.sh is currently incomplete, and nearly unusable, so loa
     * step (step target -- currently StepOver only)
     * print (print information about something -- currently only Program Counter)
     * help (list possible commands, or display specific command's help)
+    * debug (drop to a Python debugger, so you can debug while you debug.)
     * quit
 * Readline input handling supports up/down keys, and history.
 * Address-to-Source-Line conversions when stepping.
@@ -63,7 +64,7 @@ PICdb> continue
 Breakpoint 1: Stopped at 0x9D00B982 (MainDemo.c:534)
 PICdb> step
 PC: 0x9D00B982  (MainDemo.c:534)  (LW V0, -32416(S0))
-PICdb> print pc
+PICdb> print $pc
 PC: 0x9D00B9AC
 PICdb> continue
 Breakpoint 0: Stopped at 0x9D00B8C8 (MainDemo.c:431)
