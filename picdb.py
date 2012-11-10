@@ -75,15 +75,51 @@ Usage: load <file>
         self.dbg.load(args)
         self.dbg.reset()
 
+    def _addrFileAndLine(self, file, line):
+        '''Return address for instruction at given line of given file.'''
+        return self.dbg.findBreakableAddressInFile(file, line)
+        
+    def _addrFunction(self, fn):
+        '''Return address of function fn (string)'''
+        return self.dbg.getFunctionAddress(fn)
+
+    def _addrLine(self, line):
+        '''Return address of instruction at given line in current file'''
+        pc = self.dbg.getPC()
+        (curfile,_) = self.dbg.addressToSourceLine(pc, stripdir=False)
+        return self.dbg.findBreakableAddressInFile(curfile, line)
+
+    def _safeStrToInt(self, numstr):
+        '''Try to convert string to int, return None on failure'''
+        try:
+            return int(numstr,0)
+        except ValueError:
+            return None
+
     def cmdBreak(self, args):
         '''
 Set a breakpoint
-Usage: break <address>
+Usage:
+    break *<address>
+    break <file>:<line>
+    break <line>
+    break <function name>
 <address> is a memory address specified in decimal, or hexadecimal with an '0x'
 prefix.
 '''
-        addr = int(args,0)
-        self.dbg.setBreakpoint(addr)
+        elems = args.split(":")
+        if args[0] == "*": # *<address>
+            addr = self._safeStrToInt(args[1:])
+        elif len(elems) >= 2:
+            addr = self._addrFileAndLine(elems[0], self._safeStrToInt(elems[1]))
+        else:
+            num = self._safeStrToInt(elems[0])
+            if num:
+                addr = self._addrLine(num)
+            else:
+                addr = self._addrFunction(elems[0])
+        return self.dbg.setBreakpoint(addr)
+
 
     def cmdBreakpoints(self, args):
         '''

@@ -183,7 +183,6 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
                     break
             except TranslatorException:
                 continue
-        print "%s:%d ==> 0x%X" % (fullpath.split("/")[-1], line+i, info.lStartAddr)
         addr = info.lStartAddr
         return addr
 
@@ -219,6 +218,14 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         if mem.Read(addr, length, data) == length:
             return data        
         return None
+
+    def getFunctionAddress(self, funcname):
+        sv = self.assembly.getLookup().lookup(SymbolViewProvider)
+        info = sv.getRawSymbol(funcname)
+        if not info or info.Type() != 64: # 64 is magic number found by inspection
+            return None
+        return info.Address()
+    
 
     def getSymbolValue(self, symbol):
         sv = self.assembly.getLookup().lookup(SymbolViewProvider)
