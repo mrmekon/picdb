@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import struct
@@ -22,6 +23,8 @@ from com.microchip.mplab.mdbcore.objectfileparsing.exception import ProgramFileP
 from com.microchip.mplab.mdbcore.platformtool import PlatformToolMetaManager
 from com.microchip.mplab.mdbcore.symbolview.interfaces import SymbolViewProvider
 from com.microchip.mplab.mdbcore.common.debug.SymbolType import eFundamentalType as VarType
+from com.microchip.mplab.mdbcore.objectfileparsing import Dwarf
+from com.microchip.mplab.mdbcore.objectfileparsing import MDBFileMagic
 
 from com.microchip.mplab.mdbcore.ControlPointMediator.ControlPoint import BreakType
 from com.microchip.mplab.mdbcore.ControlPointMediator import ControlPointMediator
@@ -106,9 +109,12 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
     def selectDebugger(self):
         # Select PICkit3 debugger
         alltools = PlatformToolMetaManager.getAllTools()
+        # Name mangling, because they report stupid strings
         devname = self.devices[0].split(":=")[6] # name is 6th entry in device string
         if devname.find("PICkit") == 0:
             devname = devname.replace(" ", "") # damn tools report the wrong name
+        elif devname.lower().find("real ice") >= 0:
+            devname = "Real ICE"
         tool = [x for x in alltools if x.getName() == devname][0]
         self.factory.ChangeTool(self.assembly,
                                 tool.getConfigurationObjectID(),
@@ -122,7 +128,7 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         self.assembly.SetHeader("");
         self.mdb = self.assembly.getLookup().lookup(Debugger)
 
-        print "Connecting to PICkit3..."
+        print "Connecting to debugger..."
         try:
             self.mdb.Attach(self, None)
             self.mdb.Connect(Debugger.CONNECTION_TYPE.DEBUGGER)
@@ -141,6 +147,14 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
             self.translator = self.assembly.getLookup().lookup(ITranslator)
             self.disassembler = self.assembly.getLookup().lookup(DisAsm)
             self.mem = self.assembly.getLookup().lookup(ProgramMemory).GetVirtualMemory()
+
+            # Get ELF parser to find filenames and paths
+            self.file_magic = MDBFileMagic(file)
+            self.dwarf = Dwarf(self.file_magic)
+            self.comp_units = self.dwarf.getCompilationUnits()
+            self.filenames = [x.getSourceFileAbsolutePath() for x in self.comp_units]
+            
+            
         except DebugException:
             print "Failed to load ELF onto target."
             return False
@@ -148,6 +162,30 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
             print "File not found."
             return False
         return True
+
+    def findFile(self, filename):
+        abspaths = [x for x in self.filenames if x.rfind(filename) >= 0]
+        for path in abspaths:
+            if os.path.exists(path):
+                return path
+        return None
+
+    def findBreakableAddressInFile(self, filename, line):
+        fullpath = self.findFile(filename)
+        if fullpath is None:
+            print "File not found."
+            return None
+        addr = None
+        for i in range(20):
+            try:
+                info = self.translator.sourceLineToAddress(fullpath, line+i)
+                if info:
+                    break
+            except TranslatorException:
+                continue
+        print "%s:%d ==> 0x%X" % (fullpath.split("/")[-1], line+i, info.lStartAddr)
+        addr = info.lStartAddr
+        return addr
 
     def testSourceLookup(self):
         sourcefile = "/path/to/MainDemo.c"
