@@ -87,7 +87,6 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
             bp.setFileNameAndLine(file, line)
             self._breakpoints.append(bp)
             self.cpm.commitAndReleaseWritableControlPointStore(wcps)
-            print "New breakpoint at 0x%X (%s:%d)" % (bp.getBreakAddress(), file, line)
             return True
         return False
 
@@ -99,12 +98,10 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
                 break
         return result
 
-    def listBreakpoints(self):
-        print "All breakpoints:"
-        for i,bp in enumerate(self._breakpoints):
-            print "%d: 0x%X (%s:%d) %c" % (i, bp.getBreakAddress(),
-                bp.getFileName(), bp.getFileLine(),
-                '*' if bp.getEnabled() else ' ')
+    def allBreakpoints(self):
+        return [(i,bp.getBreakAddress(),bp.getFileName(),
+                 bp.getFileLine(), bp.getEnabled())
+                for (i,bp) in enumerate(self._breakpoints)]
 
     def selectDebugger(self):
         # Select PICkit3 debugger
@@ -194,10 +191,7 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
 
     def reset(self):
         # Reset to main
-        print "Resetting target..."
         self.mdb.Reset(True)
-        pc = self.mdb.GetPC()
-        print "PC: 0x%X" % pc
 
     def disconnect(self):
         if self.mdb:

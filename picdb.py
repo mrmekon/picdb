@@ -5,7 +5,9 @@ import bdb
 import time
 import string
 import signal
+import logging
 import operator
+from optparse import OptionParser
 
 from mdb.picdebugger import picdebugger
 
@@ -13,6 +15,8 @@ class CommandHandler:
     def __init__(self, quitCB):
         self.dbg = picdebugger()
         self._quitCB = quitCB
+        self.log = logging.getLogger("picdb")
+        self.log.setLevel(logging.INFO)
         self._commandMap = {
         "connect": {'fn': self.cmdConnect, 'help': "Conects to a PIC target."},
         "load": {'fn': self.cmdLoad, 'help': "Load ELF file onto target."},
@@ -37,7 +41,7 @@ ex: connect PIC32MX150F128B
 '''
         splitargs = args.split(None)
         if len(splitargs) < 1:
-            print "Not enough arguments"
+            self.log.info("Not enough arguments")
         self.dbg.selectDevice(args)
         self.dbg.enumerateDevices()
         self.dbg.selectDebugger()
@@ -53,11 +57,11 @@ Supported registers:
         if args[0] != "$":
             data = self.dbg.getSymbolValue(args)
             if data is not None:
-                print data
+                self.log.warning("%s = %s" % (args, data))
             else:
-                print "Symbol not found."
+                self.log.warning("Symbol not found.")
         if args.lower() == "$pc":
-            print "PC: 0x%X" % self.dbg.getPC()
+            self.log.warning("PC: 0x%X" % self.dbg.getPC())
 
     def cmdDebug(self, args):
         '''
@@ -73,7 +77,10 @@ Usage: load <file>
 <file> can be a full absolute path, or relative to the working directory.
 '''
         self.dbg.load(args)
+        self.log.info("Resetting target...")
         self.dbg.reset()
+        pc = self.dbg.getPC()
+        self.log.info("PC: 0x%X" % pc)
 
     def _addrFileAndLine(self, file, line):
         '''Return address for instruction at given line of given file.'''
@@ -118,7 +125,12 @@ prefix.
                 addr = self._addrLine(num)
             else:
                 addr = self._addrFunction(elems[0])
-        return self.dbg.setBreakpoint(addr)
+        result = self.dbg.setBreakpoint(addr)
+        if result:
+            (file,line) = self.dbg.addressToSourceLine(addr)
+            self.log.info("New breakpoint at 0x%X (%s:%d)" % (addr, file, line))
+        else:
+            self.log.info("Failed to set breakpoint.")
 
 
     def cmdBreakpoints(self, args):
@@ -127,7 +139,11 @@ List all set breakpoints.  Outputs a numbered list of breakpoints, their memory
 address, their source file and line, and an asterisk if they are enabled.
 Usage: breakpoints
 '''
-        self.dbg.listBreakpoints()
+        breakpoints = self.dbg.allBreakpoints()
+        self.log.info("All breakpoints:")
+        for (i,addr,file,line,enabled) in breakpoints:
+            self.log.info("%d: 0x%X (%s:%d) %c" % (i, addr, file, line,
+                                                   '*' if enabled else ' '))
         
     def cmdContinue(self, args):
         '''
@@ -146,18 +162,19 @@ Usage: continue
         pc = self.dbg.getPC()
         bp = self.dbg.breakpointIndexForAddress(pc)
         (file,line) = self.dbg.addressToSourceLine(pc)
-        print "%sStopped at 0x%X (%s:%d)" % ("" if bp < 0 else "Breakpoint %d: " % bp,
-                                             pc,file,line)
+        self.log.info("%sStopped at 0x%X (%s:%d)" %
+                      ("" if bp < 0 else "Breakpoint %d: " % bp,
+                       pc,file,line))
 
     def cmdList(self, args):
         pc = self.dbg.getPC()
         fname,line = self.dbg.addressToSourceLine(pc, stripdir=False)
-        print "Listing from: %s" % fname
+        self.log.info("Listing from: %s" % fname)
         f = open(fname, "r")
         for _ in range(line-1):
             f.readline()
         for i in range(10):
-            print "%.3d: %s" % (line+i, f.readline())
+            self.log.info("%.3d: %s" % (line+i, f.readline()))
 
 
     def cmdStep(self, args):
@@ -198,20 +215,20 @@ Request list of commands, or help on a specific command.
 Usage: help [command]
 '''
         if len(args) == 0:
-            print "Type 'help <topic>' for help."
-            print
+            self.log.info("Type 'help <topic>' for help.")
+            self.log.info("")
             for x,info in sorted(self._commandMap.iteritems(),key=operator.itemgetter(0)):
                 line = x.ljust(20)
                 if info.has_key('help'):
                     line += info['help']
-                print line[0:80]
-            print
+                self.log.info(line[0:80])
+            self.log.info("")
         else:
             try:
                 fn = self._commandMap[args]['fn']
-                print fn.__doc__
+                self.log.info(fn.__doc__)
             except KeyError:
-                print "Nothing found for topic: %s" % args
+                self.log.info("Nothing found for topic: %s" % args)
 
 
 class CommandInterpreter:
@@ -224,7 +241,7 @@ class CommandInterpreter:
         '''Set main loop to stop running.'''
         self.running = False
 
-    def _cleanShutdown(self):
+    def cleanShutdown(self):
         '''Disconnect from debugger and quit.'''
         self._handler.dbg.disconnect()
         sys.exit(0) # this will interrupt raw_input()
@@ -232,7 +249,7 @@ class CommandInterpreter:
     def sigIntHandler(self, sig, frame):
         '''Quit cleanly on ^C.'''
         self.stopInputLoop()
-        self._cleanShutdown()
+        self.cleanShutdown()
 
     def _displayPrompt(self):
         '''Display the debugger prompt.'''
@@ -258,6 +275,11 @@ class CommandInterpreter:
                 matches = True
         return matches
 
+    def executeCommand(self, input):
+        for cmd,info in self._handler._commandMap.iteritems():
+            if self._stringStartsWithCmd(input, cmd):
+                info['fn'](input[len(cmd):].strip())
+        
     
     def _mainLoop(self):
         '''Main loop listening for commands from user.'''
@@ -266,9 +288,7 @@ class CommandInterpreter:
             user_input = self._readUserInput()
             if user_input == "":
                 continue
-            for cmd,info in self._handler._commandMap.iteritems():
-                if self._stringStartsWithCmd(user_input, cmd):
-                    info['fn'](user_input[len(cmd):].strip())
+            self.executeCommand(user_input)
         print
         
     
@@ -282,9 +302,37 @@ class CommandInterpreter:
                 self._mainLoop()
             except bdb.BdbQuit:
                 pass # pdb quit, but we're still runnin'
-        self._cleanShutdown()
+        self.cleanShutdown()
 
 if __name__ == "__main__":
-    interp = CommandInterpreter()
-    interp.run()
+    logging.basicConfig(format="%(message)s")
+    parser = OptionParser()
+    parser.add_option("-t", "--target", dest="target", metavar="TARGET",
+                      help="PIC target to connect to.")
+    parser.add_option("-f", "--file", dest="file", metavar="FILE",
+                      help="ELF file to load onto target.")
+    parser.add_option("-s", "--script", dest="script", metavar="SCRIPT",
+                      help="Debug script to execute.")
+    (options, args) = parser.parse_args()
 
+    interp = CommandInterpreter()
+    if hasattr(options, "target"):
+        interp.executeCommand("connect %s" % options.target)
+        if hasattr(options, "file"):
+            interp.executeCommand("load %s" % options.file)
+
+    if not hasattr(options, "script") or not options.script:
+        interp.run()
+    else:
+        log = logging.getLogger("picdb")
+        log.setLevel(logging.WARNING)
+        script = open(options.script, "r")
+        for line in script:
+            try:
+                interp.executeCommand(line)
+            except Exception, e:
+                print e
+        script.close()
+
+    interp.cleanShutdown()
+    
