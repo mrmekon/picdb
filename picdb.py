@@ -69,14 +69,23 @@ Drops to a Python prompt for debug-level introspection.
 Usage: debug
 '''
         pdb.set_trace()
-            
+
     def cmdLoad(self, args):
         '''
 Load an ELF file onto target board.
 Usage: load <file>
 <file> can be a full absolute path, or relative to the working directory.
 '''
-        self.dbg.load(args)
+        fullpath = args
+        if fullpath[0] != '/':
+            cwd = os.getcwd()
+            path = args if args[0:2] != "./" else args[2:]
+            fullpath = cwd + "/" + path
+        self.log.info("Loading ELF: %s" % fullpath)
+        if not os.path.exists(fullpath):
+            self.log.error("File does not exist.")
+            return
+        self.dbg.load(fullpath)
         self.log.info("Resetting target...")
         self.dbg.reset()
         pc = self.dbg.getPC()
@@ -314,6 +323,7 @@ if __name__ == "__main__":
     parser.add_option("-s", "--script", dest="script", metavar="SCRIPT",
                       help="Debug script to execute.")
     (options, args) = parser.parse_args()
+
 
     interp = CommandInterpreter()
     if hasattr(options, "target"):

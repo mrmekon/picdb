@@ -137,7 +137,6 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
     def load(self, file):
         # Load ELF file onto target
         self.loader = self.assembly.getLookup().lookup(Loader)
-        print "Loading ELF file..."
         try:
             self.loader.Load(file)
             self.mdb.Program(Debugger.PROGRAM_OPERATION.AUTO_SELECT)
