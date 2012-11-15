@@ -25,6 +25,8 @@ from com.microchip.mplab.mdbcore.symbolview.interfaces import SymbolViewProvider
 from com.microchip.mplab.mdbcore.common.debug.SymbolType import eFundamentalType as VarType
 from com.microchip.mplab.mdbcore.objectfileparsing import Dwarf
 from com.microchip.mplab.mdbcore.objectfileparsing import MDBFileMagic
+from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import ATTR
+from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import LEOE
 
 from com.microchip.mplab.mdbcore.ControlPointMediator.ControlPoint import BreakType
 from com.microchip.mplab.mdbcore.ControlPointMediator import ControlPointMediator
@@ -134,6 +136,172 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
             return False
         return True
 
+    def initDwarfSymbols(self):
+        '''Cache a global list of ALL known DWARF entries from all compilation units.'''
+        self.dwarfEntries = [(entry,unit) for unit in self.comp_units
+                             for entry in unit.getEntries()]
+        # TODO: Only recurse once here.  Is that enough?
+        self.dwarfEntries.extend(
+            [(child,unit) for unit in self.comp_units
+             for entry in unit.getEntries()
+                for child in entry.children])
+
+    def structEntryAddress(self, entry):
+        '''Extract address from DWARF entry.  Returns 0 if none available.'''
+        addr = entry.getAttributeValue(ATTR.DW_AT_location)
+        # Not all entries have addresses:
+        if not addr: 
+            return 0
+        # Entries that have addresses should start with the addr operation
+        if LEOE.get(addr[0]) != LEOE.DW_OP_addr:
+            print "WARNING: Struct entry address is malformed."
+            return 0
+        # Unpack the address as 4-byte, little endian word.
+        # TODO: Architecture dependency!
+        return struct.unpack("<I", addr[1:])[0]
+
+
+    def dwarfResolveEntryType(self, dwarfEntry, dwarfCU):
+        '''Returns tuple (type,compilation unit) with type of given entry.'''
+        typeOffset = dwarfEntry.getAttributeValue(ATTR.DW_AT_type)
+        if not typeOffset:
+            return (dwarfEntry, dwarfCU)
+        idx = dwarfCU.unit_offset + typeOffset
+        entries = [(x,cu) for (x,cu) in self.dwarfEntries
+                   if x.fileRefference == idx]
+        if not entries:
+            return (None, None)
+        return entries[0]
+
+    def dwarfEntryFromNameAndAddress(self, name, address):
+        '''Returns DWARF entry for symbol with given name at given address'''
+        declsWithName = [(x,cu) for (x,cu) in self.dwarfEntries
+                         if x.getName() == name]
+        if not declsWithName:
+            return (None, None)
+        declsWithAddress = [(x,cu) for (x,cu) in declsWithName
+                            if self.structEntryAddress(x) == address]
+        if not declsWithAddress:
+            return (None, None)
+        return declsWithAddress[0]
+
+    def dwarfEntryTypeTree(self, dwarfEntry, dwarfCU, maxdepth=15, tree=[]):
+        '''Returns list of DWARF elements with all types for given entry.
+
+        A DWARF entry, |dwarfEntry|, can consist of a long line of struct
+        or typedef types.  This function traverses down the chain of types
+        until it finds a 'primitive' type, and then returns the chain in
+        reverse.
+
+        Returns a list of tuples in format (dwarfEntry, dwarfCU).
+
+        Ex:
+        Definitions: typedef struct myType_t {...} myType; myType myVar;
+        Start entry: |dwarfEntry| represents myVar
+        Returns: [myType_t pair, myType pair, myVar pair]
+
+        Definitions: typedef ULONG unsigned long; ULONG myLong;
+        Start entry: |dwarfEntry| represents myLong
+        Returns: [unsigned long pair, ULONG pair, myLong pair]
+        
+        '''
+        if not maxdepth or not dwarfEntry.getAttributeValue(ATTR.DW_AT_type):
+            return tree + [(dwarfEntry, dwarfCU)]
+        (x,y) = self.dwarfResolveEntryType(dwarfEntry, dwarfCU)
+        return self.dwarfEntryTypeTree(x,y,maxdepth-1,tree) + [(dwarfEntry,dwarfCU)]
+        
+
+    def traverseStruct(self, symbol):
+        (entry, cu) = self.dwarfEntryFromNameAndAddress(symbol.Name(), symbol.Address())
+        typeTree = self.dwarfEntryTypeTree(entry,cu)
+        return typeTree[0]
+
+    def structMembersForSymbol(self, symbolStr):
+        sv = self.assembly.getLookup().lookup(SymbolViewProvider)
+        symbol = sv.getRawSymbol(symbolStr)
+        (sEntry, sCU) = self.traverseStruct(symbol)
+        if not sEntry or not sCU:
+            print "Couldn't find structure details."
+            return
+        return [x.getName() for x in sEntry.members]
+
+        
+    def recursiveEntryTraverse(self, entry):
+        '''Debug function.'''
+        print hex(entry.getFileRefference())
+        for child in entry.children:
+            self.recursiveEntryTraverse(child)
+
+    def debugNotes(self):
+        from com.microchip.mplab.mdbcore.symbolview.interfaces import SymbolViewProvider
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import ATTR
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import LEOE
+        sv = self.dbg.assembly.getLookup().lookup(SymbolViewProvider)
+        symbol = sv.getRawSymbol("AppConfig")
+        (entry,cu) = self.dbg.dwarfEntryFromNameAndAddress(symbol.Name(),symbol.Address())
+        self.dbg.dwarfEntryTypeTree(entry, cu)
+        
+        self.dbg.initDwarfSymbols()
+        typedef = symbol.typeDefName()
+        alldecls = [x for (x,_) in self.dbg.dwarfDecls if x.getName() == symbol.Name()]
+        decls = [x for x in alldecls if self.dbg.structEntryAddress(x) == symbol.Address()]
+        import struct
+        decs = [struct.unpack("<I", x.getAttributeValue(ATTR.DW_AT_location)[1:])[0] for x in decls if x.getAttributeValue(ATTR.DW_AT_location)]
+        if not decs:
+            print "Symbol not found in DWARF info."
+            return
+        decl = decs[0]
+
+        self.dbg.dwarfEntries[1][0]
+        sEntry.members[8]
+        sEntry.members[11] 
+        
+        
+    def getAppStruct(self):
+        decs = [x.getDeclarations() for x in self.comp_units]
+        configs = [b for c in decs for b in c if b and b.getName() == "AppConfig"]
+        configs[0].getTypeDef()
+        configs[0].tag # DW_TAG_variable
+        [x.getDeclarationFilePath() for x in configs]
+
+        ents = [x.getEntries() for x in self.comp_units]
+        
+        aconfs = [entry for unit in self.dbg.comp_units
+                  for entry in unit.getEntries()
+                  if entry.getName() == "APP_CONFIG"]
+        aconfs[0].getType()
+        aconfs[0].tag # DW_TAG_typedef
+        
+        astructs = [(entry,unit) for unit in self.dbg.comp_units
+                    for entry in unit.getEntries()
+                    if entry.getName() == "appConfigStruct"]
+        astructs[0][0].tag # DW_TAG_structure_type
+        members = astructs[0][0].getMembers()
+        members[0].getType() # DWORD_VAL
+
+        mac = [x for x in members if x.getName() == "MyMACAddr"][0]
+        mac.getTypeDef() # MAC_ADDR
+
+        flags = [x for x in members if x.getName() == "Flags"][0]
+        flags.getType() # ''
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import ATTR
+        flags.getAttributeValue(ATTR.DW_AT_type) # 0x114b -- address of anonymous struct
+
+        # Offset into parent structure in bytes:
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import LEOE
+        (op, offset) = flags.getAttributeValue(ATTR.DW_AT_data_member_location)
+        LEOE.get(op) == LEOE.DW_OP_plus_uconst
+
+        # Search for an entry by type.
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import TAG
+        [entry for unit in self.dbg.comp_units for entry in unit.getEntries() if entry.kind == TAG.DW_TAG_typedef and entry.getAttributeValue(ATTR.DW_AT_type) == 0x114b]
+
+        # The type of flag (an anonymous struct, 0x114b) doesn't exist in the comp units.
+        
+        stask = self.dwarf.getCompilationUnit("Microchip/TCPIP Stack/StackTsk.c") 
+        struct = [x for x in stask.getEntries() if x.getName() == "appConfigStruct"][0]
+        struct.getChildren()
+
     def load(self, file):
         # Load ELF file onto target
         self.loader = self.assembly.getLookup().lookup(Loader)
@@ -149,7 +317,7 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
             self.dwarf = Dwarf(self.file_magic)
             self.comp_units = self.dwarf.getCompilationUnits()
             self.filenames = [x.getSourceFileAbsolutePath() for x in self.comp_units]
-            
+            self.initDwarfSymbols()
             
         except DebugException:
             print "Failed to load ELF onto target."
@@ -218,7 +386,18 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         if not info or info.Type() != 64: # 64 is magic number found by inspection
             return None
         return info.Address()
-    
+
+    def getStructSymbol(self, symbol):
+        # struct type VarType.ST_STRUCT (8)
+        # local symbols:
+        #x = sv.resolve(symbol, pc, False)
+        from com.microchip.mplab.mdbcore.symbolview import SymbolInfoDefault
+        y = SymbolInfoDefault(info)
+        sv.readIntegralMemberValuesOnly(y)
+        sv.readValueInformation(y)
+        pc = getPC()
+        sv.getLocalSymbols(pc)
+        pass
 
     def getSymbolValue(self, symbol):
         sv = self.assembly.getLookup().lookup(SymbolViewProvider)
@@ -226,6 +405,10 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         if not info:
             return None
         vartype = info.Type()
+
+        if VarType.get(vartype) == VarType.ST_STRUCT:
+            return self.structMembersForSymbol(symbol)
+        
         varlength = info.ByteLength()
         data = self.getMemoryContents(info.Address(), varlength, virtual=True)
         if not data:

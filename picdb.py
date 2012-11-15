@@ -68,6 +68,13 @@ Supported registers:
 Drops to a Python prompt for debug-level introspection.
 Usage: debug
 '''
+        from com.microchip.mplab.mdbcore.symbolview.interfaces import SymbolViewProvider
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import ATTR
+        from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import LEOE
+        sv = self.dbg.assembly.getLookup().lookup(SymbolViewProvider)
+        symbol = sv.getRawSymbol("AppConfig")
+        (entry,cu) = self.dbg.dwarfEntryFromNameAndAddress(symbol.Name(),symbol.Address())
+        tree = self.dbg.dwarfEntryTypeTree(entry, cu)
         pdb.set_trace()
 
     def cmdLoad(self, args):
