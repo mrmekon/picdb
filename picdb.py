@@ -27,6 +27,7 @@ class CommandHandler:
         "help": {'fn': self.cmdHelp, 'help': "Displays this help."},
         "debug": {'fn': self.cmdDebug, 'help': "Drop to Python console."},
         "break": {'fn': self.cmdBreak, 'help': "Set breakpoint."},
+        "tools": {'fn': self.cmdTools, 'help': "List connected debuggers/programmers."},
         "continue": {'fn': self.cmdContinue, 'help': "Continue running target."},
         "print": {'fn': self.cmdPrint, 'help': "Display variable."},
         "breakpoints": {'fn': self.cmdBreakpoints, 'help': "List breakpoints."},
@@ -69,6 +70,16 @@ Drops to a Python prompt for debug-level introspection.
 Usage: debug
 '''
         pdb.set_trace()
+
+    def cmdTools(self, args):
+        """
+Prints a list of all connected USB programmers/debuggers.
+"""
+        self.dbg.enumerateDevices()
+        for line in self.dbg.connectedDeviceStrings():
+            print line
+        print
+        
 
     def cmdLoad(self, args):
         '''
@@ -326,9 +337,9 @@ if __name__ == "__main__":
 
 
     interp = CommandInterpreter()
-    if hasattr(options, "target"):
+    if hasattr(options, "target") and options.target:
         interp.executeCommand("connect %s" % options.target)
-        if hasattr(options, "file"):
+        if hasattr(options, "file") and options.file:
             interp.executeCommand("load %s" % options.file)
 
     if not hasattr(options, "script") or not options.script:

@@ -44,6 +44,8 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         self.mdb = None
         self._breakpoints = []
         self.isHalted = True
+        self.factory = MCAssemblyFactory()
+        self.provider = MPLABCommProvider()
 
     def Update(self, obj):
         if obj.GetEvent() == ToolEvent.EVENTS.HALT:
@@ -60,9 +62,7 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         
     def selectDevice(self, devstr):
         # Register PIC target device
-        self.factory = MCAssemblyFactory()
         self.assembly = self.factory.Create(devstr)
-        self.provider = MPLABCommProvider()
 
     def enumerateDevices(self):
         # Enumerate USB debuggers
@@ -106,16 +106,22 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
                  bp.getFileLine(), bp.getEnabled())
                 for (i,bp) in enumerate(self._breakpoints)]
 
+    def connectedDeviceStrings(self):
+        devs = []
+        for i in self.devices:
+            dev = self.devices[i]
+            sn = dev.split(":=")[7]
+            devID = ''.join(["0x",dev.split(":=")[3]])
+            tool = [x for x in PlatformToolMetaManager.getAllTools()
+                    if devID in x.USBProductIDs][0]
+            devs.append("%d: %s (%s)" % (i, tool.getName(), sn))
+        return devs
+
     def selectDebugger(self):
         # Select PICkit3 debugger
         alltools = PlatformToolMetaManager.getAllTools()
-        # Name mangling, because they report stupid strings
-        devname = self.devices[0].split(":=")[6] # name is 6th entry in device string
-        if devname.find("PICkit") == 0:
-            devname = devname.replace(" ", "") # damn tools report the wrong name
-        elif devname.lower().find("real ice") >= 0:
-            devname = "Real ICE"
-        tool = [x for x in alltools if x.getName() == devname][0]
+        devid = ''.join(["0x",self.devices[0].split(":=")[3]])
+        tool = [x for x in alltools if devid in x.USBProductIDs][0]
         self.factory.ChangeTool(self.assembly,
                                 tool.getConfigurationObjectID(),
                                 tool.getClassName(),
