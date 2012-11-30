@@ -14,45 +14,15 @@ class SymbolParser:
         return info.Address()
 
     def getSymbolValue(self, symbol):
+        elements = symbol.replace(".","-.").split("-")
+        if len(elements) > 1:
+            print "Compound symbol!"
+
         info = self.sv.getRawSymbol(symbol)
         if not info:
             return None
-        vartype = info.Type()
 
-        if VarType.get(vartype) == VarType.ST_STRUCT:
-            (entry,cu) = self.structParser.dwarfEntryFromNameAndAddress(info.Name(),info.Address())
-            members = self.structParser.structMembersForStructEntry(entry,cu)
-            #self.printStructMembers(members)
-            structstr = "{\n"
-            for member in members:
-                structstr += "    %s = %s,\n" % (member['name'],
-                                               self.structParser.structMemberValue(info.Address(), member))
-            #return members
-            structstr += "}"
-            return structstr
-        
-        varlength = info.ByteLength()
-        data = self.memoryIface.getMemoryContents(info.Address(), varlength, virtual=True)
-        if not data:
-            return None
+        if VarType.get(info.Type()) == VarType.ST_STRUCT:
+            return self.structParser.getStructAsString(info.Name(), info.Address())
 
-        # Unpack array into variable based on type
-        fmtMap = {1: "b", 2: "h", 4: "i", 8: "q"}
-        # TODO: fill out map of types and their signedness
-        signMap = {VarType.ST_ULONG.value(): False,
-                   VarType.ST_LONG.value(): True,
-                   }
-        if varlength > 8:
-            # TODO: Handle complex symbols.  Struct or string or something.
-            print "Symbol type not handled!"
-            return None
-        fmt = fmtMap[varlength]
-        if vartype in signMap:
-            fmt = fmt.lower() if signMap[vartype] else fmt.upper()
-        # Special cases:
-        if vartype == VarType.ST_FLOAT:
-            fmt = "f"
-        elif vartype == VarType.ST_DOUBLE:
-            fmt = "d"
-        return struct.unpack(fmt, data.tostring())[0]
-    
+        return self.structParser.getSymbolAsString(info.Name(), info.Address())

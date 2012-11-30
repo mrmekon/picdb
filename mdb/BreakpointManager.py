@@ -1,5 +1,6 @@
 import os
 from com.microchip.mplab.mdbcore.ControlPointMediator.ControlPoint import BreakType
+from com.microchip.mplab.mdbcore.translator.exceptions import TranslatorException
 
 class BreakpointManager:
     def __init__(self, controlPointMediator, translator, filenames):

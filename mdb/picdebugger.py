@@ -151,8 +151,6 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         return self.breakpointManager.breakpointIndexForAddress(addr)
     def allBreakpoints(self):
         return self.breakpointManager.allBreakpoints()
-    def findFile(self, filename):
-        return self.breakpointManager.findFile(filename)
     def findBreakableAddressInFile(self, filename, line):
         return self.breakpointManager.findBreakableAddressInFile(filename,line)
     def addressToSourceLine(self, addr, stripdir=True):
