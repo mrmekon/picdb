@@ -26,6 +26,7 @@ from com.microchip.mplab.mdbcore.common.debug.SymbolType import eFundamentalType
 from com.microchip.mplab.mdbcore.objectfileparsing import Dwarf
 from com.microchip.mplab.mdbcore.objectfileparsing import MDBFileMagic
 from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import ATTR
+from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import ATE
 from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import LEOE
 from com.microchip.mplab.mdbcore.objectfileparsing.dwarfconsts import TAG
 
@@ -312,16 +313,24 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
                 if t.kind == TAG.DW_TAG_array_type:
                     isArray = True
                     arrayLength = self.findArrayLengthInEntry(t)
+            isPointer = False
+            pointerSize = 0
+            for (t,cu) in types:
+                if t.kind == TAG.DW_TAG_pointer_type:
+                    isPointer = True
+                    pointerSize = t.getAttributeValue(ATTR.DW_AT_byte_size)
             members.append({
-                "name": member.getName(),
+                "name": str(member.getName()),
                 "offset": self.entryOffset(member),
                 "size": types[0][0].getAttributeValue(ATTR.DW_AT_byte_size),
-                "encoding": member.getAttributeValue(ATTR.DW_AT_encoding),
+                "encoding": types[0][0].getAttributeValue(ATTR.DW_AT_encoding),
                 "hasChildren": types[0][0].hasChildren(),
                 "typeTree": types,
                 "isUnion": types[0][0].kind == TAG.DW_TAG_union_type,
                 "isStruct": types[0][0].kind == TAG.DW_TAG_structure_type,
                 "isArray": isArray,
+                "isPointer": isPointer,
+                "pointerSize": pointerSize,
                 "arrayLength": arrayLength,
                 "isBitfield": isBitfield,
                 "bitOffset": bitOffset,
@@ -417,9 +426,6 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         return info.Address()
 
     def getStructSymbol(self, symbol):
-        # struct type VarType.ST_STRUCT (8)
-        # local symbols:
-        #x = sv.resolve(symbol, pc, False)
         from com.microchip.mplab.mdbcore.symbolview import SymbolInfoDefault
         y = SymbolInfoDefault(info)
         sv.readIntegralMemberValuesOnly(y)
@@ -427,6 +433,55 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         pc = getPC()
         sv.getLocalSymbols(pc)
         pass
+
+    def structMemberValue(self, baseAddress, member):
+        if member['isStruct']:
+            return "{...}"
+        if member['isUnion']:
+            return "{...}"
+        addr = baseAddress + member['offset']
+        varlength = member['size']
+        readlength = varlength
+        if member['isArray']:
+            readlength = readlength * member['arrayLength']
+        elif member['isPointer']:
+            varlength = member['pointerSize']
+            readlength = member['pointerSize']
+        data = self.getMemoryContents(addr, readlength, virtual=True)
+        fmt = "%s"
+        if member['isPointer']:
+            fmt = ("(%s*) " % str(member['typeTree'][0][0].getAttributeValue(ATTR.DW_AT_name))) + "0x%x" + fmt
+        elif member['encoding'] == ATE.DW_ATE_unsigned_char:
+            fmt = "'%c'" + fmt
+        else:
+            fmt = "%d" + fmt
+        result = ""
+        if member['isArray']:
+            result += "["
+        intArray = self.dataArrayToInts(data, varlength, member['encoding'])
+        intCount = len(intArray)
+        for idx,val in enumerate(intArray):
+            result += fmt % (val, ', ' if (idx < intCount-1) else '')
+        if member['isArray']:
+            result += "]"
+        return result
+        
+
+    def dataArrayToInts(self, data, intSize, encoding):
+        """Given a list of bytes |data|, return a list of ints of |intSize| bytes.
+        
+If |value| is not divisible by intSize, returns array of 1-byte ints."""
+        fmtMap = {1: "<B", 2: "<H", 4: "<I", 8: "<Q"}
+        if len(data) % intSize != 0 or intSize not in fmtMap:
+            intSize = 1
+        fmt = fmtMap[intSize]
+        fmt = fmt.lower() if (encoding == ATE.DW_ATE_signed or
+                              encoding == ATE.DW_ATE_signed_char) else fmt.upper()
+        result = []
+        for val in [data[x:x+intSize] for x in xrange(0, len(data), intSize)]:
+            result.append(struct.unpack(fmt, val.tostring())[0])
+        return result
+        
 
     def getSymbolValue(self, symbol):
         sv = self.assembly.getLookup().lookup(SymbolViewProvider)
@@ -438,9 +493,14 @@ class picdebugger(com.microchip.mplab.util.observers.Observer):
         if VarType.get(vartype) == VarType.ST_STRUCT:
             (entry,cu) = self.dwarfEntryFromNameAndAddress(info.Name(),info.Address())
             members = self.structMembersForStructEntry(entry,cu)
-            self.printStructMembers(members)
+            #self.printStructMembers(members)
+            structstr = "{\n"
+            for member in members:
+                structstr += "    %s = %s,\n" % (member['name'],
+                                               self.structMemberValue(info.Address(), member))
             #return members
-            return None
+            structstr += "}"
+            return structstr
         
         varlength = info.ByteLength()
         data = self.getMemoryContents(info.Address(), varlength, virtual=True)
