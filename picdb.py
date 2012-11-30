@@ -43,7 +43,7 @@ ex: connect PIC32MX150F128B
         splitargs = args.split(None)
         if len(splitargs) < 1:
             self.log.info("Not enough arguments")
-        self.dbg.selectDevice(args)
+        self.dbg.selectTarget(args)
         self.dbg.enumerateDevices()
         self.dbg.selectDebugger()
         self.dbg.connect()
